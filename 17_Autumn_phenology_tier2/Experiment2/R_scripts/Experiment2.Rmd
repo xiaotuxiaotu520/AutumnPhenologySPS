@@ -1,0 +1,563 @@
+---
+title: "Effect of climate warming on the timing of autumn leaf senescence reverses at the summer solstice"
+subtitle: "Experiment 2: Effects of water and nutrient availability on autumn phenology"
+---
+
+<br><br>
+
+## 1. Load packages and functions
+
+<details><summary>load packages</summary>
+
+```{r, message=FALSE, warning=FALSE}
+require(ggplot2)
+require(tidyverse)
+require(broom)
+require(patchwork)
+require(lubridate)
+require(data.table)
+require(gmodels)
+require(wesanderson)
+require(mgcv)
+```
+
+</details>
+
+<details><summary>load functions</summary>
+
+```{r, message=FALSE, warning=FALSE}
+##########################################
+# SPAD reading to chlorophyll conversion #
+##########################################
+
+SPADtoChl = function(SPAD){
+  Chl = ifelse(SPAD==0, 0, -0.0029*(SPAD^2) + 1.175*SPAD + 3.8506)
+  return(Chl)
+}
+#SPAD: unitless
+#Chl: leaf chlorophyll in microgram / gram fresh weight
+#Intercept forced to zero
+
+#From Percival et al. 2008: The Potential of a Chlorophyll Content SPAD Meter to Quantify Nutrient Stress in Foliar Tissue of Sycamore (Acer pseudoplatanus), English Oak (Quercus robur), and European Beech (Fagus sylvatica)
+```
+
+</details>
+
+<br>
+
+## 2. Load data
+
+<details>
+
+<summary>data tables</summary>
+
+```{r}
+################
+# define paths #
+################
+
+data.dir   = "/Users/consti/Desktop/PhD/Publication_material/17_Autumn_phenology_tier2/Experiment2/R_data"
+output.dir = "/Users/consti/Desktop/PhD/Publication_material/17_Autumn_phenology_tier2/Experiment2/R_output"
+
+
+#############
+# Load data #
+#############
+
+# Moisture
+moisture.data = data.frame(fread(paste(data.dir,"SoilMoisture.csv",sep="/"), header=T, sep=","))%>%
+  filter(!is.na(moisture)) %>% #delete NAs
+  mutate(treatment = plyr::revalue(treatment, c("A" = "High",
+                                                "B" = "Interm.",
+                                                "C" = "Low",
+                                                "D" = "No")))
+
+# Chlorophyll
+chlorophyll.data = read.table(paste(data.dir,"Chlorophyll.csv",sep="/"), header=T, sep=",") %>%
+  mutate(WaterTreatment = plyr::revalue(WaterTreatment, c("A" = "High",
+                                                          "B" = "Interm.",
+                                                          "C" = "Low",
+                                                          "D" = "No")),
+         #Convert dates to DOY
+         date = dmy(date),
+         #Create treatment column
+         treatment = paste(WaterTreatment, NutrientTreatment, sep='_'),)
+```
+
+</details><details><summary>ggplot themes</summary>
+
+```{r}
+######################
+# Define plot themes #
+######################
+
+plotTheme1 = theme(#legend.position   = "none",
+  legend.background = element_rect(fill=NA, size=0.5, linetype="solid"),
+  legend.text       = element_text(color="black"),
+  panel.background  = element_blank(),
+  axis.text         = element_text(colour = "black"),
+  panel.border      = element_rect(colour = "black", fill=NA),
+  axis.line         = element_line(color = "black"),
+  strip.background  = element_rect(fill=NA),
+  strip.text        = element_text(colour = 'black'),
+  plot.title        = element_text(face="bold",hjust = 0.5))
+
+plotTheme2 = theme(legend.position   = "none",
+                   legend.background = element_rect(fill=NA, size=0.5, linetype="solid"),
+                   legend.text       = element_text(color="black"),
+                   panel.grid.major  = element_blank(),
+                   panel.grid.minor  = element_blank(),
+                   axis.text.y       = element_blank(),
+                   axis.text.x       = element_text(colour = "black"),
+                   axis.ticks.y      = element_blank(),
+                   axis.line.y       = element_blank(),
+                   panel.background  = element_blank(),
+                   axis.line         = element_line(color = "black"),
+                   strip.background  = element_rect(fill=NA),
+                   strip.text        = element_text(colour = 'black'),
+                   plot.title        = element_text(face="bold"))
+
+plotTheme3 = theme(legend.position   = "none",
+                   legend.background = element_rect(fill=NA, size=0.5, linetype="solid"),
+                   legend.text       = element_text(color="black"),
+                   panel.grid.major  = element_blank(),
+                   panel.grid.minor  = element_blank(),
+                   panel.background  = element_blank(),
+                   panel.border      = element_blank(),
+                   axis.text         = element_text(colour = "black"),
+                   axis.line         = element_line(color = "black"),
+                   strip.background  = element_rect(fill=NA),
+                   strip.text        = element_text(colour = 'black'),
+                   plot.title        = element_text(face="bold"))
+```
+
+</details>
+
+<br>
+
+## 3. Moisture data
+
+<details><summary>Summary and plots</summary>
+
+```{r, message=FALSE, warning=FALSE}
+moisture.data = moisture.data %>%
+  mutate(
+    #Convert dates to DOY
+    date = dmy(date),
+    #order treatments
+    treatment = factor(treatment, levels=c('High','Interm.','Low','No'), ordered=T)
+  )
+
+
+#summarize table by treatments
+data.frame(moisture.data %>% 
+             group_by(treatment) %>% 
+              summarise(median = median(moisture),
+                        mean   = ci(moisture)[1], 
+                        min    = min(moisture),
+                        max    = max(moisture),
+                        lowCI  = ci(moisture)[2],
+                        hiCI   = ci(moisture)[3], 
+                        sd     = sd(moisture) ) )
+
+
+#Plots
+PanelA = 
+  ggplot(moisture.data, aes(x=treatment, y=moisture, fill=treatment)) + 
+  geom_boxplot(coef=1e30) +
+  coord_cartesian(ylim = c(1.8, 39))+
+  labs(x = "Treatment", y = "Soil moisture (%)") +
+  scale_fill_manual(values = c('#3B9AB2','#78B7C5','#E1AF00','#F21A00'))+
+  plotTheme3 +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+
+pd  = position_dodge(0.2) 
+PanelB = ggplot(moisture.data, aes(x=date, y=moisture, colour=treatment, group=treatment)) + 
+  stat_summary(fun.data = "mean_se", geom="line", size=1, position=pd) +
+  stat_summary(fun.data = "mean_se", size = .3, position=pd) +
+  coord_cartesian(ylim = c(1.8, 39))+
+  labs(x = "Date", y = "") +
+  scale_color_manual(values = c('#3B9AB2','#78B7C5','#E1AF00','#F21A00'))+
+  plotTheme2
+```
+
+</details>
+
+<br>
+
+## 4. Chlorophyll data
+
+<details><summary>Sample sizes</summary>
+
+```{r}
+table(chlorophyll.data$WaterTreatment, chlorophyll.data$date)
+```
+
+</details>
+
+<details><summary>Data preparation</summary>
+
+```{r, warning=F, message=F}
+#####################################################################
+## Transform SPAD to chlorophyll and get relative chlorophyll content
+#####################################################################
+
+
+chlorophyll.data = chlorophyll.data %>%
+  group_by(ID)%>%
+  mutate(
+    #convert SPAD readings to Chlorophyll content (Percival et al. 2008)
+    chlorophyll.leaf  = SPADtoChl(SPAD),
+    #add scaling factor (leaf abscission)
+    chlorophyll.plant = chlorophyll.leaf*scalingFactor,
+    #get relative chlorophyll content per individual
+    chlorophyll.plant.rel = chlorophyll.plant / max(chlorophyll.plant), 
+    #get date of maximum chlorophyll content per individual
+    date.max.chl    = date[which.max(chlorophyll.plant)]) %>%
+  ungroup()
+
+
+
+##################################################################################
+## Interpolate 10% and 50% senescence dates from seasonal chlorophyll measurements
+##################################################################################
+
+
+# Interpolate EOS10 (date chlorophyll last dropped below 90%)
+senescence.data.10 = chlorophyll.data %>%
+  group_by(ID, treatment,NutrientTreatment,WaterTreatment) %>%
+  # Find the last row with >90% chlorophyll in each group, keep only this row and next
+  filter(row_number() <= max(which(chlorophyll.plant.rel > 0.9))+1,
+         row_number() >= max(which(chlorophyll.plant.rel > 0.9))) %>%
+  #Linear interpolation
+  summarize(EOS     = as.Date(approx(chlorophyll.plant.rel, date, .9,  ties=min)$y, origin="1970-01-01")) %>%
+  mutate(EOS.DOY    = yday(EOS),
+         phenophase = "EOS10") %>%
+  ungroup()
+
+# Interpolate EOS50 (date chlorophyll last dropped below 50%)
+senescence.data.50 = chlorophyll.data %>%
+  group_by(ID, treatment,NutrientTreatment,WaterTreatment) %>%
+  # Find the last row with >50% chlorophyll in each group, keep only this row and next
+  filter(row_number() <= max(which(chlorophyll.plant.rel > 0.5))+1,
+         row_number() >= max(which(chlorophyll.plant.rel > 0.5))) %>%
+  #Linear interpolation
+  summarize(EOS     = as.Date(approx(chlorophyll.plant.rel, date, .5,  ties=min)$y, origin="1970-01-01")) %>%
+  mutate(EOS.DOY    = yday(EOS),
+         phenophase = "EOS50") %>%
+  ungroup()
+
+# Rbind
+senescence.data = rbind(senescence.data.10,senescence.data.50)
+```
+
+</details>
+
+<details><summary>Senescence date analysis</summary>
+
+```{r,warning=F}
+# Linear model
+resultsLM = senescence.data %>% 
+    group_by(phenophase) %>% 
+    do({model = lm(EOS.DOY ~ NutrientTreatment+WaterTreatment, data=.)  # create your model
+    data.frame(tidy(model),
+               lowCI=ci(model)[,2],
+               hiCI=ci(model)[,3])
+    }) %>%
+  filter(!term %in% c("(Intercept)")) %>%
+  mutate(term = factor(term, levels=c("WaterTreatmentInterm.",
+                                      'WaterTreatmentLow',
+                                      "WaterTreatmentNo",
+                                      "NutrientTreatmentLow")),
+         phenophase = factor(phenophase, levels=c("EOS10","EOS50"))
+                        )
+
+as.data.frame(resultsLM) %>%
+  dplyr::select(-c(statistic))%>%
+  mutate_if(is.numeric, round, digits=3)
+```
+
+</details>
+
+<br>
+
+## 5. Figures
+
+</details>
+
+<details><summary>plot 1: Senescence date boxplots</summary>
+
+```{r, fig.align = "center"}
+#order treatments
+senescence.data = senescence.data %>%
+  mutate(WaterTreatment    = factor(WaterTreatment,    levels=c('High','Interm.','Low','No'), ordered=T),
+         NutrientTreatment = factor(NutrientTreatment, levels=c('High','Low'), ordered=T))
+
+#Plot EOS50
+SenescenceBoxplot = senescence.data %>%
+  filter(phenophase == "EOS50") %>%
+  ggplot(mapping = aes(x = WaterTreatment, y = EOS, fill=NutrientTreatment)) +
+  geom_boxplot(position=position_dodge(0.8)) +
+  xlab("Treatment") +
+  ylab("EOS50") +
+  scale_fill_manual(values = c("#F21A00","#E1AF00")) +
+  coord_cartesian(ylim=c(as.Date(c('2020-09-01','2020-11-05'))))+
+  plotTheme3
+
+#Save PDF
+pdf(paste(output.dir,"SenescenceBoxplot.pdf",sep="/"), width=3, height=3, useDingbats=FALSE)
+SenescenceBoxplot
+dev.off()
+
+SenescenceBoxplot
+
+#Plot EOS50 and EOS10
+SenescenceBoxplot = senescence.data %>%
+  ggplot(mapping = aes(x = WaterTreatment, y = EOS, fill=NutrientTreatment)) +
+  geom_boxplot(position=position_dodge(0.8)) +
+  xlab("Treatment") +
+  ylab("Senescence date") +
+  scale_fill_manual(values = c("#F21A00","#E1AF00")) +
+  facet_wrap(~phenophase, ncol=2, scales="free_y")+
+  plotTheme1 
+
+SenescenceBoxplot
+```
+
+</details>
+
+<details><summary>plot 2: Linear model effects</summary>
+
+```{r, fig.align = "center"}
+LMplot = ggplot(resultsLM, aes(x=term, y=estimate, fill=term)) + 
+  geom_hline(yintercept = 0)+
+  geom_bar(position=position_dodge(), stat="identity") +
+  geom_errorbar(aes(ymin=lowCI, ymax=hiCI),
+                width=.2,                    # Width of the error bars
+                position=position_dodge(.9))+
+  coord_cartesian(ylim=c(-22,22))+
+  scale_fill_manual(values = c('#3B9AB2','#3B9AB2','#3B9AB2',"#F21A00")) +
+  facet_wrap(~phenophase, ncol=2)+
+  plotTheme1+
+  theme(axis.text.x = element_text(angle = 45, hjust=1),
+        legend.position = "none")
+
+#Save PDF
+pdf(paste(output.dir,"LinearModelPlot.pdf",sep="/"), width=6, height=6, useDingbats=FALSE)
+LMplot
+dev.off()
+
+LMplot
+```
+</details>
+
+<details><summary>plot 3: Chlorophyll curves (water treatment)</summary>
+
+```{r, warning=FALSE, fig.height = 8, fig.align = "center"}
+#order treatments
+chlorophyll.data = chlorophyll.data %>%
+  mutate(WaterTreatment = factor(WaterTreatment, levels=c('High','Interm.','Low','No'), ordered=T))
+
+#move points .05 to the left and right
+pd = position_dodge(2) 
+
+#plot
+Chlorophyll_curves_water = ggplot(chlorophyll.data, aes(x=date, y=chlorophyll.plant.rel*100, 
+                             colour=WaterTreatment, group=WaterTreatment)) +
+  
+  geom_hline(yintercept = 50, colour="lightgrey")+
+  geom_hline(yintercept = 90, colour="lightgrey")+
+  geom_hline(yintercept = 10, colour="lightgrey")+
+  
+  geom_vline(xintercept = as.Date('2020-11-01'), colour="lightgrey")+
+  geom_vline(xintercept = as.Date('2020-10-01'), colour="lightgrey")+
+  geom_vline(xintercept = as.Date('2020-09-01'), colour="lightgrey")+
+  geom_vline(xintercept = as.Date('2020-08-01'), colour="lightgrey")+
+  
+  stat_summary(fun.data = "mean_cl_normal", geom="line", size = 1.2, position=pd, alpha=0.7) +
+  stat_summary(fun.data = "mean_cl_normal", geom="errorbar", size = 0.8, width=0, position=pd) +
+  stat_summary(fun.data = "mean_cl_normal", geom="point", size = 1.2, position=pd) +
+  
+  scale_color_manual(values = c('#3B9AB2','#78B7C5','#E1AF00','#F21A00'))+
+
+  coord_cartesian(ylim=c(4,96),xlim=c(as.Date(c('2020-07-25','2020-11-05'))))+
+  
+  xlab("Date") +
+  ylab("Relative leaf chlorophyll content (%)") +
+  
+  facet_wrap(~NutrientTreatment, ncol=1)+
+  plotTheme1 +
+  theme(legend.position = "none")
+
+#define plot layout
+layout <- "
+ABB
+CCC
+CCC"
+
+#Merge plots
+MoistPlot = PanelA + PanelB + Chlorophyll_curves_water + plot_layout(design = layout) + plot_annotation(tag_levels = 'a')&
+  theme(plot.tag = element_text(face = 'bold'))
+
+#Save PDF
+pdf(paste(output.dir,"MoisturePlot.pdf",sep="/"), width=5, height=7, useDingbats=FALSE)
+MoistPlot
+dev.off()
+
+MoistPlot
+```
+
+</details>
+
+<details><summary>plot 4: Chlorophyll curves (nutrient treatment)</summary>
+
+```{r, fig.align = "center"}
+Chlorophyll_nutrients = ggplot(chlorophyll.data, aes(x=date, y=chlorophyll.plant.rel*100, 
+                             colour=NutrientTreatment, group=NutrientTreatment)) +
+  
+  geom_hline(yintercept = 50, colour="lightgrey")+
+  geom_hline(yintercept = 90, colour="lightgrey")+
+  geom_hline(yintercept = 10, colour="lightgrey")+
+  
+  geom_vline(xintercept = as.Date('2020-11-01'), colour="lightgrey")+
+  geom_vline(xintercept = as.Date('2020-10-01'), colour="lightgrey")+
+  geom_vline(xintercept = as.Date('2020-09-01'), colour="lightgrey")+
+  geom_vline(xintercept = as.Date('2020-08-01'), colour="lightgrey")+
+  
+  stat_summary(fun.data = "mean_cl_normal", geom="line", size = 1.2, position=pd, alpha=0.7) +
+  stat_summary(fun.data = "mean_cl_normal", geom="errorbar", size = 0.8, width=0, position=pd) +
+  stat_summary(fun.data = "mean_cl_normal", geom="point", size = 1.2, position=pd) +
+  
+  scale_colour_manual(values = c("#F21A00","#E1AF00")) +
+  
+  coord_cartesian(ylim=c(4,96),xlim=c(as.Date(c('2020-07-25','2020-11-05'))))+
+  
+  xlab("Date") +
+  ylab("Relative leaf chlorophyll content (%)") +
+  
+  facet_wrap(~WaterTreatment, ncol=1)+
+  plotTheme1
+
+#Save PDF
+pdf(paste(output.dir,"NutrientPlot.pdf",sep="/"), width=5.5, height=6, useDingbats=FALSE)
+Chlorophyll_nutrients
+dev.off()
+
+Chlorophyll_nutrients
+```
+
+</details>
+
+<details><summary>plot 5: Chlorophyll curves (Individuals)</summary>
+
+```{r, fig.width = 10, fig.asp = 1.62, fig.align = "center"}
+################################
+# Relative chlorophyll content #
+################################
+
+Chlorophyll_individuals = chlorophyll.data %>%
+  ggplot(aes(x=date, y=chlorophyll.plant.rel*100, 
+                             colour=treatment, fill=treatment)) +
+  
+  geom_vline(xintercept = as.Date('2020-11-01'), colour="lightgrey")+
+  geom_vline(xintercept = as.Date('2020-10-01'), colour="lightgrey")+
+  geom_vline(xintercept = as.Date('2020-09-01'), colour="lightgrey")+
+  geom_vline(xintercept = as.Date('2020-08-01'), colour="lightgrey")+
+  geom_vline(xintercept = as.Date('2020-07-01'), colour="lightgrey")+
+  
+  geom_hline(yintercept = 50, colour="black")+
+  geom_hline(yintercept = 90, colour="lightgrey")+
+  geom_hline(yintercept = 10, colour="lightgrey")+
+  
+  geom_line(aes(x=date, y=chlorophyll.plant.rel*100), color="black")+
+  geom_point()+
+  geom_area(aes(x=date, y=chlorophyll.plant.rel*100), alpha=0.5) +
+
+  geom_vline(data=senescence.data[senescence.data$phenophase=="EOS10",], 
+             aes(xintercept = EOS), linetype = "dashed")+
+  geom_vline(data=senescence.data[senescence.data$phenophase=="EOS50",], 
+             aes(xintercept = EOS), linetype = "dashed", color="blue")+
+
+  scale_color_manual(values = wes_palette(8, name = "Zissou1", type = "continuous"))+
+  scale_fill_manual(values = wes_palette(8, name = "Zissou1", type = "continuous"))+
+  
+  coord_cartesian(ylim=c(4,96),xlim=c(as.Date(c('2020-07-01','2020-11-25'))))+
+  
+  xlab("Date") +
+  ylab("Relative leaf chlorophyll content (%)") +
+  
+  facet_wrap(~ID, dir="v", nrow=15)+
+  plotTheme1
+
+#Save PDF
+pdf(paste(output.dir,"IndividualPlot_ChlRel.pdf",sep="/"), width=9, height=18, useDingbats=FALSE)
+Chlorophyll_individuals
+dev.off()
+
+Chlorophyll_individuals
+
+
+################################
+# Absolute chlorophyll content #
+################################
+
+Chlorophyll_absolute_individuals = chlorophyll.data %>%
+  ggplot(aes(x=date, y=chlorophyll.plant, 
+                             colour=treatment, fill=treatment)) +
+  
+  geom_vline(xintercept = as.Date('2020-11-01'), colour="lightgrey")+
+  geom_vline(xintercept = as.Date('2020-10-01'), colour="lightgrey")+
+  geom_vline(xintercept = as.Date('2020-09-01'), colour="lightgrey")+
+  geom_vline(xintercept = as.Date('2020-08-01'), colour="lightgrey")+
+  geom_vline(xintercept = as.Date('2020-07-01'), colour="lightgrey")+
+  
+  geom_hline(yintercept = 50, colour="lightgrey")+
+  geom_hline(yintercept = 25, colour="lightgrey")+
+  
+  geom_line(aes(x=date, y=chlorophyll.plant), color="black")+
+  geom_point()+
+  geom_area(aes(x=date, y=chlorophyll.plant), alpha=0.5) +
+
+  geom_vline(data=senescence.data[senescence.data$phenophase=="EOS10",], 
+             aes(xintercept = EOS), linetype = "dashed")+
+  geom_vline(data=senescence.data[senescence.data$phenophase=="EOS50",], 
+             aes(xintercept = EOS), linetype = "dashed", color="blue")+
+
+  scale_color_manual(values = wes_palette(8, name = "Zissou1", type = "continuous"))+
+  scale_fill_manual(values = wes_palette(8, name = "Zissou1", type = "continuous"))+
+  
+  coord_cartesian(ylim=c(2,50), xlim=c(as.Date(c('2020-07-01','2020-11-05'))))+
+  
+  xlab("Date") +
+  ylab("Leaf chlorophyll content (microgram per gram fresh weight)") +
+  
+  facet_wrap(~ID, dir="v", nrow=15)+
+  plotTheme1
+
+#Save PDF
+pdf(paste(output.dir,"IndividualPlot_ChlAbs.pdf",sep="/"), width=8, height=18, useDingbats=FALSE)
+Chlorophyll_absolute_individuals
+dev.off()
+
+Chlorophyll_absolute_individuals
+```
+
+</details>
+
+<br>
+
+## 6. Reproducibility
+
+</details>
+
+<details><summary>Reproducibility info</summary>
+
+```{r}
+## date time
+Sys.time()
+
+## session info
+sessionInfo()
+```
+
+</details>
